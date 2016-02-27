@@ -30,7 +30,7 @@ public class Maze {
 	private char[][] grid;
         private char[][] colors;
 
-        public Random rand = new Random();
+        public Random rand = new Random(0);
 
 	public static Maze readFromFile(String filename) {
 		Maze m = new Maze();
@@ -73,7 +73,11 @@ public class Maze {
 	public char getChar(int x, int y) {
 		return grid[y][x];
 	}
-	
+
+        public char getColor(int x, int y) {
+                return colors[y][x];
+        }
+
 	// is the location x, y on the map, and also a legal floor tile (not a wall)?
 	public boolean isLegal(int x, int y) {
 		// on the map
