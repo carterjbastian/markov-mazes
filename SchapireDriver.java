@@ -30,7 +30,7 @@ public class SchapireDriver {
     public double[][] gSensorModel;
 
     public double[] forwardInitialCondition;
-
+    public double[] backwardInitialCondition;
 
     public SchapireProblem(Maze maze, int dim, int pLen) {
       mazeDimension = dim;
@@ -42,7 +42,7 @@ public class SchapireDriver {
       evidence = m.getColorPath(randomPath);
 
       printPath();
-
+      setUp();
     }
 
     /**
@@ -161,13 +161,161 @@ public class SchapireDriver {
       System.out.println("Transpose of Transition Table: ");
       printMatrix(transitionTranspose, stateCount);
 
+      /* Build the backward initial condtion */
+      backwardInitialCondition = new double[stateCount];
+      Arrays.fill(backwardInitialCondition, 1.0);
+      System.out.println("\nInitial Condition (Backward):");
+      printMessage(backwardInitialCondition, mazeDimension);
 
       /* Build the forward initial condition */
       initProb = 1.0 / stateCount;          // All states are equi-probable 
       forwardInitialCondition = new double[stateCount];
       Arrays.fill(forwardInitialCondition, initProb);
-      System.out.println("\nInitial Condition:");
+      System.out.println("\nInitial Condition (Forward):");
       printMessage(forwardInitialCondition, mazeDimension);
+
+    }
+
+    /**
+     * Implements Markov Chain Filtering to produce probability distributions
+     */
+    public void solveFiltering() {
+      double[][] sensorModel = null;
+      double[] forwardMessage;
+      int[] XY;
+
+      // Initialize with the initial probability distribution
+      forwardMessage = forwardInitialCondition;
+
+      for (int step = 0; step < randomPath.length; step++) {
+        // Select the appropriate sensor model based on the evidence
+        switch (evidence[step]) {
+          case 'r':   sensorModel = rSensorModel;
+                      break;
+          case 'b':   sensorModel = bSensorModel;
+                      break;
+          case 'g':   sensorModel = gSensorModel;
+                      break;
+          case 'y':   sensorModel = ySensorModel;
+                      break;
+        }
+        
+        // f_1:t+1 = alpha * SensorModel_t+1 * TransitionTranspose * f_1:t
+        forwardMessage = normalize(
+                          matrixMultiply(sensorModel, 
+                            matrixMultiply(transitionTranspose, forwardMessage)));
+
+        System.out.println("\nFiltered Distribuition at step " + (step+1) + ": ");
+        System.out.println("(Real location is state " + randomPath[step] + ")");
+        printMessage(forwardMessage, mazeDimension);
+
+      }
+    }
+
+    /**
+     * Implements Forward-Backward Algorithm to produce probability distributions
+     */
+    public void solveSmoothing() {
+      // We have to store the filtering approximations
+      double[][] fVals = new double[randomPath.length][stateCount];
+
+
+      double[][] sensorModel = null;
+      double[] forwardMessage;
+      double[] backwardMessage;
+      double[] distribution;
+      int[] XY;
+
+      // Initialize with the initial probability distribution
+      forwardMessage = forwardInitialCondition;
+      backwardMessage = backwardInitialCondition;
+
+      // Forward part of forward-backwards
+      for (int step = 0; step < randomPath.length; step++) {
+        // Select the appropriate sensor model based on the evidence
+        switch (evidence[step]) {
+          case 'r':   sensorModel = rSensorModel;
+                      break;
+          case 'b':   sensorModel = bSensorModel;
+                      break;
+          case 'g':   sensorModel = gSensorModel;
+                      break;
+          case 'y':   sensorModel = ySensorModel;
+                      break;
+        }
+        
+        // f_1:t+1 = alpha * SensorModel_t+1 * TransitionTranspose * f_1:t
+        forwardMessage = normalize(
+                          matrixMultiply(sensorModel, 
+                            matrixMultiply(transitionTranspose, forwardMessage)));
+
+        fVals[step] = forwardMessage; // Store this approximation
+
+
+
+      }
+
+      // Backwards part of forward-backwards
+      for (int step = randomPath.length - 1; step >= 0; step--) {
+        distribution = normalize(messageMultiply(fVals[step], backwardMessage));
+
+        // Print the results at this step
+        System.out.println("\nSmoothed Distribuition at step " + (step+1) + ": ");
+        System.out.println("(Real location is state " + randomPath[step] + ")");
+        printMessage(distribution, mazeDimension);
+
+        // Select the appropriate sensor model based on the evidence
+        switch (evidence[step]) {
+          case 'r':   sensorModel = rSensorModel;
+                      break;
+          case 'b':   sensorModel = bSensorModel;
+                      break;
+          case 'g':   sensorModel = gSensorModel;
+                      break;
+          case 'y':   sensorModel = ySensorModel;
+                      break;
+        }
+
+        backwardMessage = matrixMultiply(transitionModel, 
+                            matrixMultiply(sensorModel,backwardMessage));
+      }
+    }
+
+    public static double[] messageMultiply(double[]m1, double[]m2) {
+      double[] result = new double[m1.length];
+
+      for (int i = 0; i < m1.length; i++)
+        result[i] = m1[i] * m2[i];
+
+      return result;
+    }
+    
+    public static double[] matrixMultiply(double[][]matrix, double[]message) {
+      double[] result = new double[message.length];
+      double rowSum = 0;
+    
+      // Loop through each row in the matrix
+      for (int y = 0; y < message.length; y++) {
+        rowSum = 0;
+        for (int x = 0; x < message.length; x++) {
+          rowSum += (matrix[y][x] * message[x]);
+        }
+        result[y] = rowSum;
+      }
+      return result;
+    }
+
+    public static double[] normalize(double[] message) {
+      double[] normalized = new double[message.length];
+      double sum = 0;
+
+      for (double val : message)
+        sum += val;
+
+      for (int i = 0; i < message.length; i++)
+        normalized[i] = message[i] / sum;
+
+      return normalized;
     }
 
     public void printPath() {
@@ -212,7 +360,9 @@ public class SchapireDriver {
   public static void main(String[] args) {
     m = Maze.readFromFile(mazeFile);
     SchapireProblem prob = new SchapireProblem(m, mazeDimension, pathLen);
-    prob.setUp();
+    prob.solveFiltering();
+
+    prob.solveSmoothing();
   }
 
 }
