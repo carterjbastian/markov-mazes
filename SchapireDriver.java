@@ -2,6 +2,8 @@ package probabalistic_reasoning;
 
 import java.util.Arrays;
 import java.text.DecimalFormat;
+import java.util.LinkedList;
+
 public class SchapireDriver {
   // Variables
   private static final int mazeDimension = 4;
@@ -32,6 +34,9 @@ public class SchapireDriver {
     public double[] forwardInitialCondition;
     public double[] backwardInitialCondition;
 
+    public double[][] viterbiMessages; // Holds probabilities of optimal path to that state (at that step)
+    public int[][] viterbiBackchains; // Holds the backchain accross steps
+
     public SchapireProblem(Maze maze, int dim, int pLen) {
       mazeDimension = dim;
       m = maze;
@@ -40,6 +45,9 @@ public class SchapireDriver {
       randomPath = m.getPath(pLen);
       correctColors = m.getCorrectColorPath(randomPath);
       evidence = m.getColorPath(randomPath);
+
+      viterbiMessages = new double[pLen][stateCount];
+      viterbiBackchains = new int[pLen][stateCount];
 
       printPath();
       setUp();
@@ -205,11 +213,103 @@ public class SchapireDriver {
                           matrixMultiply(sensorModel, 
                             matrixMultiply(transitionTranspose, forwardMessage)));
 
+        // Step one is the starting point for viterbi optimal-path finding
+        if (step == 0)
+          viterbiMessages[0] = forwardMessage;
+
         System.out.println("\nFiltered Distribuition at step " + (step+1) + ": ");
         System.out.println("(Real location is state " + randomPath[step] + ")");
         printMessage(forwardMessage, mazeDimension);
 
       }
+    }
+
+    /**
+     * Implements the Viterbi Algorithm to find the optimal path
+     */
+    public void solveBestPath() {
+      int maxState, nextStateBack; 
+      double maxVal;
+      double tempVal;
+      double[][] sensorModel = null;
+
+      LinkedList<Integer> optimalPath = new LinkedList<Integer>();
+
+      int currState, lastState;
+
+
+
+      // Setup the path lengths
+      Arrays.fill(viterbiBackchains[0], -1);
+
+      // Loop through each step in the path
+      for (int step = 1; step < randomPath.length; step++) {
+        double[] viterbiMessage = new double[stateCount];
+
+        // Loop through each possible current state to fill out the viterbi message
+        for (currState = 0; currState < stateCount; currState++) {
+          maxState = -1;
+          maxVal = 0.0;
+
+          // Loop through each possible last state
+          for (lastState = 0; lastState < stateCount; lastState++) {
+            // Get the probability of an optimal path to the last state 
+            // times the probability of transitioning from the last state to the current
+            tempVal = viterbiMessages[step - 1][lastState] * transitionModel[lastState][currState];
+
+            if (tempVal > maxVal) {
+              maxVal = tempVal;
+              maxState = lastState;
+            }
+          }
+          
+          // Update this index in the viterbiMessage
+          viterbiMessage[currState] = maxVal;
+          viterbiBackchains[step][currState] = maxState;
+        }
+
+        // Having the probabilities correctly in the viterbiMessage,
+        // Find and apply the sensor model, normalize, and save in the global variable
+
+        // Select the appropriate sensor model based on the evidence
+        switch (evidence[step]) {
+          case 'r':   sensorModel = rSensorModel;
+                      break;
+          case 'b':   sensorModel = bSensorModel;
+                      break;
+          case 'g':   sensorModel = gSensorModel;
+                      break;
+          case 'y':   sensorModel = ySensorModel;
+                      break;
+        }
+
+        viterbiMessages[step] = normalize(
+                                  matrixMultiply(sensorModel,
+                                    viterbiMessage));
+      }
+
+      // Loop through the last viterbiMessage to find the starting point for backchaining
+      maxState = -1;
+      maxVal = -1.0;
+      for (int i = 0; i < stateCount; i++) {
+        tempVal = viterbiMessages[randomPath.length - 1][i];
+        if (tempVal > maxVal) {
+          maxVal = tempVal;
+          maxState = i;
+        }
+      }
+
+      currState = maxState;
+      optimalPath.addFirst(currState);
+      for (int step = randomPath.length - 1; step > 0; step--) {
+        nextStateBack = viterbiBackchains[step][currState];
+        optimalPath.addFirst(nextStateBack);
+        currState = nextStateBack;
+      }
+
+      // Print results
+      System.out.println("Found optimal path with probability " + maxVal + ":");
+      System.out.println(optimalPath);
     }
 
     /**
@@ -363,6 +463,7 @@ public class SchapireDriver {
     prob.solveFiltering();
 
     prob.solveSmoothing();
+    prob.solveBestPath();
   }
 
 }
